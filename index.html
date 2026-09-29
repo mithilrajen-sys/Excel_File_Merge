@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Folder Path Merger Tool</title>
+    <!-- SheetJS library for reading/writing Excel files -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .card {
+            background: #ffffff;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            border-radius: 1rem;
+            max-width: 38rem;
+            width: 100%;
+            padding: 2rem;
+            border: 1px solid #f1f5f9;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        .subtitle {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        button.primary-btn {
+            width: 100%;
+            background-color: #2563eb;
+            color: white;
+            font-weight: 500;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            border: none;
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.25);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button.primary-btn:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+        button.primary-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button.folder-btn {
+            width: 100%;
+            background-color: #f1f5f9;
+            color: #334155;
+            font-weight: 500;
+            padding: 0.875rem 1rem;
+            border-radius: 0.75rem;
+            border: 1px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button.folder-btn:hover {
+            background-color: #e2e8f0;
+        }
+        .file-list-container {
+            margin-bottom: 1.5rem;
+        }
+        .file-list-container.hidden {
+            display: none;
+        }
+        .file-list-header {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        ul.file-list {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            max-height: 10rem;
+            overflow-y: auto;
+            font-size: 0.875rem;
+            color: #334155;
+            list-style: none;
+            margin: 0;
+        }
+        ul.file-list li {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+        }
+        ul.file-list li:hover {
+            background-color: #f1f5f9;
+        }
+        .path-display {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 0.5rem;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .status-msg {
+            font-size: 0.875rem;
+            text-align: center;
+            margin-top: 1rem;
+            color: #475569;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Excel Folder Path Merger</h1>
+        <p class="subtitle">Select your folder path to sort by filename numbers and tightly stack all files.</p>
+
+        <!-- Folder Path Selection Button -->
+        <div style="margin-bottom: 1.5rem;">
+            <button onclick="selectFolderPath()" class="folder-btn">
+                <svg style="width: 1.25rem; height: 1.25rem; color: #64748b;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                </svg>
+                Select Folder Path
+            </button>
+            <p id="selectedPathDisplay" class="path-display">No folder selected yet</p>
+        </div>
+
+        <!-- Selected Files List Preview -->
+        <div id="fileListContainer" class="file-list-container hidden">
+            <h3 id="fileCountHeader" class="file-list-header">Detected Sequence Order:</h3>
+            <ul id="fileList" class="file-list"></ul>
+        </div>
+
+        <!-- Action Button -->
+        <button id="mergeBtn" onclick="mergeFiles()" disabled class="primary-btn">
+            Merge & Download Output
+        </button>
+
+        <!-- Status Message -->
+        <p id="statusMsg" class="status-msg"></p>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+
+        async function selectFolderPath() {
+            try {
+                if (!window.showDirectoryPicker) {
+                    alert("Your browser does not support direct folder path selection. Please use Google Chrome or Microsoft Edge.");
+                    return;
+                }
+
+                const dirHandle = await window.showDirectoryPicker();
+                document.getElementById('selectedPathDisplay').textContent = `Selected Folder: /${dirHandle.name}`;
+                
+                let files = [];
+                await scanDirectory(dirHandle, files);
+
+                handleFiles(files);
+
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error(err);
+                    alert("Error reading folder path.");
+                }
+            }
+        }
+
+        async function scanDirectory(dirHandle, fileList) {
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'file') {
+                    const file = await entry.getFile();
+                    if ((file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) && !file.name.startsWith('~$')) {
+                        fileList.push(file);
+                    }
+                } else if (entry.kind === 'directory') {
+                    await scanDirectory(entry, fileList);
+                }
+            }
+        }
+
+        function handleFiles(files) {
+            selectedFiles = files;
+            const listContainer = document.getElementById('fileListContainer');
+            const fileListUI = document.getElementById('fileList');
+            const mergeBtn = document.getElementById('mergeBtn');
+            const fileCountHeader = document.getElementById('fileCountHeader');
+            
+            fileListUI.innerHTML = '';
+
+            if (selectedFiles.length > 0) {
+                selectedFiles.sort((a, b) => extractSequenceNumber(a.name) - extractSequenceNumber(b.name));
+                fileCountHeader.textContent = `Detected Sequence Order (${selectedFiles.length} files):`;
+
+                selectedFiles.forEach((file, index) => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span style="font-weight: 500;">${index + 1}. ${file.name}</span>`;
+                    fileListUI.appendChild(li);
+                });
+
+                listContainer.classList.remove('hidden');
+                mergeBtn.disabled = false;
+                document.getElementById('statusMsg').textContent = `${selectedFiles.length} files sorted by filename numbers successfully.`;
+            } else {
+                listContainer.classList.add('hidden');
+                mergeBtn.disabled = true;
+                document.getElementById('statusMsg').textContent = "No valid Excel files found in the selected folder path.";
+            }
+        }
+
+        function extractSequenceNumber(filename) {
+            const match = filename.match(/\((\d+)-/);
+            return match ? parseInt(match[1], 10) : 0;
+        }
+
+        async function mergeFiles() {
+            const statusMsg = document.getElementById('statusMsg');
+            statusMsg.textContent = "Processing files...";
+            
+            let combinedData = [];
+
+            try {
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    statusMsg.textContent = `Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`;
+                    
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    let rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    if (rows.length > 0) {
+                        // Remove completely empty rows trailing at the end or interspersed
+                        let cleanedRows = rows.filter(row => row && row.some(cell => cell !== undefined && cell !== ""));
+
+                        if (cleanedRows.length > 0) {
+                            if (i === 0) {
+                                // First file: keep header and all active rows as-is
+                                combinedData = cleanedRows;
+                            } else {
+                                // Subsequent files: skip the header row (index 0) and append only the actual data rows right below
+                                const dataRows = cleanedRows.slice(1);
+                                combinedData = combinedData.concat(dataRows);
+                            }
+                        }
+                    }
+                }
+
+                statusMsg.textContent = "Generating final merged file...";
+                const newWorksheet = XLSX.utils.aoa_to_sheet(combinedData);
+                const newWorkbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Merged Data");
+
+                XLSX.writeFile(newWorkbook, "Merged_Output.xlsx");
+                statusMsg.textContent = `Successfully merged all ${selectedFiles.length} files seamlessly & downloaded! 🎉`;
+
+            } catch (error) {
+                console.error(error);
+                statusMsg.textContent = "An error occurred while merging. Check browser console.";
+            }
+        }
+    </script>
+</body>
+</html>
