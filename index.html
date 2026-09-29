@@ -50,6 +50,7 @@
             box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.25);
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-top: 0.75rem;
         }
         button.primary-btn:hover:not(:disabled) {
             background-color: #1d4ed8;
@@ -118,6 +119,20 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .warning-msg {
+            background-color: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-align: center;
+            padding: 0.625rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .warning-msg.hidden {
+            display: none;
+        }
         .status-msg {
             font-size: 0.875rem;
             text-align: center;
@@ -149,6 +164,9 @@
             <h3 id="fileCountHeader" class="file-list-header">Detected Sequence Order:</h3>
             <ul id="fileList" class="file-list"></ul>
         </div>
+
+        <!-- Missing Output Warning Message (Appears right above the button) -->
+        <div id="warningMsg" class="warning-msg hidden">output missing</div>
 
         <!-- Action Button -->
         <button id="mergeBtn" onclick="mergeFiles()" disabled class="primary-btn">
@@ -204,6 +222,7 @@
             const fileListUI = document.getElementById('fileList');
             const mergeBtn = document.getElementById('mergeBtn');
             const fileCountHeader = document.getElementById('fileCountHeader');
+            const warningMsg = document.getElementById('warningMsg');
             
             fileListUI.innerHTML = '';
 
@@ -217,11 +236,36 @@
                     fileListUI.appendChild(li);
                 });
 
+                // Check for missing numbers in the filename ranges (e.g. (001-059) -> next should start at 060)
+                let hasMissingSequence = false;
+                let parsedRanges = [];
+
+                selectedFiles.forEach(file => {
+                    const match = file.name.match(/\((\d+)-(\d+)\)/);
+                    if (match) {
+                        parsedRanges.push({ start: parseInt(match[1], 10), end: parseInt(match[2], 10) });
+                    }
+                });
+
+                for (let i = 1; i < parsedRanges.length; i++) {
+                    if (parsedRanges[i].start !== parsedRanges[i - 1].end + 1) {
+                        hasMissingSequence = true;
+                        break;
+                    }
+                }
+
+                if (hasMissingSequence) {
+                    warningMsg.classList.remove('hidden');
+                } else {
+                    warningMsg.classList.add('hidden');
+                }
+
                 listContainer.classList.remove('hidden');
                 mergeBtn.disabled = false;
                 document.getElementById('statusMsg').textContent = `${selectedFiles.length} files sorted by filename numbers successfully.`;
             } else {
                 listContainer.classList.add('hidden');
+                warningMsg.classList.add('hidden');
                 mergeBtn.disabled = true;
                 document.getElementById('statusMsg').textContent = "No valid Excel files found in the selected folder path.";
             }
@@ -251,15 +295,12 @@
                     let rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
                     if (rows.length > 0) {
-                        // Remove completely empty rows trailing at the end or interspersed
                         let cleanedRows = rows.filter(row => row && row.some(cell => cell !== undefined && cell !== ""));
 
                         if (cleanedRows.length > 0) {
                             if (i === 0) {
-                                // First file: keep header and all active rows as-is
                                 combinedData = cleanedRows;
                             } else {
-                                // Subsequent files: skip the header row (index 0) and append only the actual data rows right below
                                 const dataRows = cleanedRows.slice(1);
                                 combinedData = combinedData.concat(dataRows);
                             }
