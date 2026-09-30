@@ -124,7 +124,15 @@
             margin-top: 1rem;
             color: #475569;
             font-weight: 500;
-            line-height: 1.4;
+            line-height: 1.5;
+        }
+        /* Highlight style for missing column numbers */
+        .highlight-missing {
+            color: #dc2626;
+            font-size: 1.05rem;
+            font-weight: 700;
+            display: inline-block;
+            margin-top: 0.25rem;
         }
     </style>
 </head>
@@ -322,16 +330,19 @@
 
                 XLSX.writeFile(newWorkbook, "Merged_Output.xlsx");
                 
-                let successText = `Successfully merged all ${selectedFiles.length} files & downloaded! 🎉`;
+                // Constructing HTML output for the status message
+                let successHTML = `Successfully merged all ${selectedFiles.length} files & downloaded! 🎉`;
                 
                 if (missingFileNumbers.length > 0) {
-                    successText += ` ⚠️ Missing in File Names: ${missingFileNumbers.join(', ')}`;
+                    successHTML += `<br>⚠️ Missing in File Names: ${missingFileNumbers.join(', ')}`;
                 }
                 if (missingColumnNumbers.length > 0) {
-                    successText += ` ⚠️ Missing in Column D: ${missingColumnNumbers.join(', ')}`;
+                    // Added a styled span container to make it bigger, red, and on a new line
+                    successHTML += `<br><span class="highlight-missing">⚠️ Missing in Column D (Missing Forms): ${missingColumnNumbers.join(', ')}</span>`;
                 }
 
-                statusMsg.textContent = successText;
+                // Using innerHTML instead of textContent to render HTML elements like <br> and <span>
+                statusMsg.innerHTML = successHTML;
 
             } catch (error) {
                 console.error(error);
