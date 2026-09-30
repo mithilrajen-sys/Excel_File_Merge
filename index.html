@@ -50,7 +50,6 @@
             box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.25);
             cursor: pointer;
             transition: background-color 0.2s;
-            margin-top: 0.75rem;
         }
         button.primary-btn:hover:not(:disabled) {
             background-color: #1d4ed8;
@@ -119,26 +118,13 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .warning-msg {
-            background-color: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fecaca;
-            font-size: 0.875rem;
-            font-weight: 600;
-            text-align: center;
-            padding: 0.625rem;
-            border-radius: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .warning-msg.hidden {
-            display: none;
-        }
         .status-msg {
             font-size: 0.875rem;
             text-align: center;
             margin-top: 1rem;
             color: #475569;
             font-weight: 500;
+            line-height: 1.4;
         }
     </style>
 </head>
@@ -164,9 +150,6 @@
             <h3 id="fileCountHeader" class="file-list-header">Detected Sequence Order:</h3>
             <ul id="fileList" class="file-list"></ul>
         </div>
-
-        <!-- Missing Output Warning Message (Appears right above the button) -->
-        <div id="warningMsg" class="warning-msg hidden">output missing</div>
 
         <!-- Action Button -->
         <button id="mergeBtn" onclick="mergeFiles()" disabled class="primary-btn">
@@ -222,7 +205,6 @@
             const fileListUI = document.getElementById('fileList');
             const mergeBtn = document.getElementById('mergeBtn');
             const fileCountHeader = document.getElementById('fileCountHeader');
-            const warningMsg = document.getElementById('warningMsg');
             
             fileListUI.innerHTML = '';
 
@@ -236,36 +218,11 @@
                     fileListUI.appendChild(li);
                 });
 
-                // Check for missing numbers in the filename ranges (e.g. (001-059) -> next should start at 060)
-                let hasMissingSequence = false;
-                let parsedRanges = [];
-
-                selectedFiles.forEach(file => {
-                    const match = file.name.match(/\((\d+)-(\d+)\)/);
-                    if (match) {
-                        parsedRanges.push({ start: parseInt(match[1], 10), end: parseInt(match[2], 10) });
-                    }
-                });
-
-                for (let i = 1; i < parsedRanges.length; i++) {
-                    if (parsedRanges[i].start !== parsedRanges[i - 1].end + 1) {
-                        hasMissingSequence = true;
-                        break;
-                    }
-                }
-
-                if (hasMissingSequence) {
-                    warningMsg.classList.remove('hidden');
-                } else {
-                    warningMsg.classList.add('hidden');
-                }
-
                 listContainer.classList.remove('hidden');
                 mergeBtn.disabled = false;
                 document.getElementById('statusMsg').textContent = `${selectedFiles.length} files sorted by filename numbers successfully.`;
             } else {
                 listContainer.classList.add('hidden');
-                warningMsg.classList.add('hidden');
                 mergeBtn.disabled = true;
                 document.getElementById('statusMsg').textContent = "No valid Excel files found in the selected folder path.";
             }
@@ -274,6 +231,19 @@
         function extractSequenceNumber(filename) {
             const match = filename.match(/\((\d+)-/);
             return match ? parseInt(match[1], 10) : 0;
+        }
+
+        function extractFileRange(filename) {
+            const match = filename.match(/\((\d+)-(\d+)\)/);
+            if (match) {
+                return {
+                    start: parseInt(match[1], 10),
+                    end: parseInt(match[2], 10)
+                };
+            }
+            const singleMatch = filename.match(/\((\d+)/);
+            const num = singleMatch ? parseInt(singleMatch[1], 10) : 0;
+            return { start: num, end: num };
         }
 
         async function mergeFiles() {
@@ -308,13 +278,60 @@
                     }
                 }
 
+                statusMsg.textContent = "Checking sequences...";
+
+                // 1. Check File Name Ranges for Gaps
+                let missingFileNumbers = [];
+                for (let i = 0; i < selectedFiles.length - 1; i++) {
+                    const currRange = extractFileRange(selectedFiles[i].name);
+                    const nextRange = extractFileRange(selectedFiles[i+1].name);
+
+                    if (nextRange.start > currRange.end + 1) {
+                        for (let n = currRange.end + 1; n < nextRange.start; n++) {
+                            missingFileNumbers.push(n);
+                        }
+                    }
+                }
+                
+                // 2. Check Column D (index 3) for missing sequence numbers
+                let columnDNumbers = [];
+                for (let r = 1; r < combinedData.length; r++) {
+                    const val = combinedData[r][3];
+                    if (val !== undefined && val !== "" && !isNaN(val)) {
+                        columnDNumbers.push(Number(val));
+                    }
+                }
+
+                let missingColumnNumbers = [];
+                if (columnDNumbers.length > 0) {
+                    const minVal = Math.min(...columnDNumbers);
+                    const maxVal = Math.max(...columnDNumbers);
+                    const numSet = new Set(columnDNumbers);
+
+                    for (let n = minVal; n <= maxVal; n++) {
+                        if (!numSet.has(n)) {
+                            missingColumnNumbers.push(n);
+                        }
+                    }
+                }
+
                 statusMsg.textContent = "Generating final merged file...";
                 const newWorksheet = XLSX.utils.aoa_to_sheet(combinedData);
                 const newWorkbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Merged Data");
 
                 XLSX.writeFile(newWorkbook, "Merged_Output.xlsx");
-                statusMsg.textContent = `Successfully merged all ${selectedFiles.length} files seamlessly & downloaded! 🎉`;
+                
+                let successText = `Successfully merged all ${selectedFiles.length} files & downloaded! 🎉`;
+                
+                if (missingFileNumbers.length > 0) {
+                    successText += ` ⚠️ Missing in File Names: ${missingFileNumbers.join(', ')}`;
+                }
+                if (missingColumnNumbers.length > 0) {
+                    successText += ` ⚠️ Missing in Column D: ${missingColumnNumbers.join(', ')}`;
+                }
+
+                statusMsg.textContent = successText;
 
             } catch (error) {
                 console.error(error);
