@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Excel Folder Path Merger Tool</title>
-    <!-- SheetJS library for reading/writing Excel files -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- xlsx-js-style library for reading/writing Excel files with cell styling support -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
     <style>
         body {
             font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -126,7 +126,6 @@
             font-weight: 500;
             line-height: 1.5;
         }
-        /* Highlight style for missing column numbers */
         .highlight-missing {
             color: #dc2626;
             font-size: 1.05rem;
@@ -170,6 +169,7 @@
 
     <script>
         let selectedFiles = [];
+        let folderName = "Merged_Output"; // Default fallback name
 
         async function selectFolderPath() {
             try {
@@ -179,7 +179,8 @@
                 }
 
                 const dirHandle = await window.showDirectoryPicker();
-                document.getElementById('selectedPathDisplay').textContent = `Selected Folder: /${dirHandle.name}`;
+                folderName = dirHandle.name; // Capture selected folder name
+                document.getElementById('selectedPathDisplay').textContent = `Selected Folder: /${folderName}`;
                 
                 let files = [];
                 await scanDirectory(dirHandle, files);
@@ -259,6 +260,7 @@
             statusMsg.textContent = "Processing files...";
             
             let combinedData = [];
+            let cyanRowIndices = []; // Stores the row indices where Column C value changes
 
             try {
                 for (let i = 0; i < selectedFiles.length; i++) {
@@ -280,6 +282,18 @@
                                 combinedData = cleanedRows;
                             } else {
                                 const dataRows = cleanedRows.slice(1);
+                                
+                                // Check if the Column C (index 2) value changes between the last element of combinedData and the first element of dataRows
+                                if (combinedData.length > 0 && dataRows.length > 0) {
+                                    const lastValC = combinedData[combinedData.length - 1][2];
+                                    const firstValC = dataRows[0][2];
+                                    
+                                    if (lastValC !== undefined && firstValC !== undefined && lastValC !== firstValC) {
+                                        cyanRowIndices.push(combinedData.length);
+                                        combinedData.push([]); // Insert empty spacer row
+                                    }
+                                }
+
                                 combinedData = combinedData.concat(dataRows);
                             }
                         }
@@ -304,9 +318,12 @@
                 // 2. Check Column D (index 3) for missing sequence numbers
                 let columnDNumbers = [];
                 for (let r = 1; r < combinedData.length; r++) {
-                    const val = combinedData[r][3];
-                    if (val !== undefined && val !== "" && !isNaN(val)) {
-                        columnDNumbers.push(Number(val));
+                    const row = combinedData[r];
+                    if (row && row.length > 3) {
+                        const val = row[3];
+                        if (val !== undefined && val !== "" && !isNaN(val)) {
+                            columnDNumbers.push(Number(val));
+                        }
                     }
                 }
 
@@ -325,23 +342,40 @@
 
                 statusMsg.textContent = "Generating final merged file...";
                 const newWorksheet = XLSX.utils.aoa_to_sheet(combinedData);
-                const newWorkbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Merged Data");
 
-                XLSX.writeFile(newWorkbook, "Merged_Output.xlsx");
+                // Apply cyan background fill style to each cell of the inserted empty rows using xlsx-js-style
+                const range = XLSX.utils.decode_range(newWorksheet['!ref'] || "A1");
+                for (let r of cyanRowIndices) {
+                    for (let c = range.s.c; c <= range.e.c; c++) {
+                        const cellAddress = XLSX.utils.encode_cell({ r: r, c: c });
+                        if (!newWorksheet[cellAddress]) {
+                            newWorksheet[cellAddress] = { t: 's', v: '' };
+                        }
+                        newWorksheet[cellAddress].s = {
+                            fill: {
+                                fgColor: { rgb: "00FFFF" } // Cyan fill color
+                            }
+                        };
+                    }
+                }
+
+                const newWorkbook = XLSX.utils.book_new();
+                // Sheet name set explicitly to "Sheet1"
+                XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Sheet1");
+
+                // File name automatically formatted as: folderName_Merged Output.xlsx
+                const outputFileName = `${folderName}_Merged Output.xlsx`;
+                XLSX.writeFile(newWorkbook, outputFileName);
                 
-                // Constructing HTML output for the status message
                 let successHTML = `Successfully merged all ${selectedFiles.length} files & downloaded! 🎉`;
                 
                 if (missingFileNumbers.length > 0) {
                     successHTML += `<br>⚠️ Missing in File Names: ${missingFileNumbers.join(', ')}`;
                 }
                 if (missingColumnNumbers.length > 0) {
-                    // Added a styled span container to make it bigger, red, and on a new line
                     successHTML += `<br><span class="highlight-missing">⚠️ Missing in Column D (Missing Forms): ${missingColumnNumbers.join(', ')}</span>`;
                 }
 
-                // Using innerHTML instead of textContent to render HTML elements like <br> and <span>
                 statusMsg.innerHTML = successHTML;
 
             } catch (error) {
